@@ -1,1 +1,1 @@
-# snapclients
+ansible-playbook -i inventory setup_snapcast.yml -e "snapcast_server_ip=192.168.68.70"

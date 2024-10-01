@@ -1,0 +1,2 @@
+[clients]
+jackiesroom ansible_host=jackiesroom.local

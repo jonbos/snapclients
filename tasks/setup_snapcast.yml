@@ -1,0 +1,104 @@
+# setup_snapcast.yml
+---
+- name: Provision Snapcast clients
+  hosts: clients
+  remote_user: client
+  become: true
+  vars:
+    snapcast_server_ip: "{{ snapcast_server_ip }}"
+
+  tasks:
+
+    - name: Install required packages
+      apt:
+        name:
+          - pulseaudio
+          - snapclient
+          - avahi-daemon
+          - avahi-utils
+        state: present
+        update_cache: yes
+
+    - name: Configure PulseAudio for system-wide use
+      lineinfile:
+        path: /etc/pulse/daemon.conf
+        regexp: '^; system-instance\s*='
+        line: '; system-instance = yes'
+        state: present
+      
+    - name: Create PulseAudio service file
+      copy:
+        dest: /etc/systemd/system/pulseaudio.service
+        content: |
+          [Unit]
+          Description=PulseAudio System Service
+          After=sound.target
+
+          [Service]
+          Type=notify
+          ExecStart=pulseaudio --daemonize=no --system --realtime --log-target=journal
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start PulseAudio service
+      systemd:
+        name: pulseaudio
+        enabled: yes
+        state: started
+
+    - name: Create Snapclient configuration file
+      copy:
+        dest: /etc/snapclient.conf
+        content: |
+          [snapclient]
+          server={{ snapcast_server_ip }}
+
+    - name: Create Snapclient service file
+      copy:
+        dest: /etc/systemd/system/snapclient.service
+        content: |
+          [Unit]
+          Description=Snapclient Service
+          After=pulseaudio.service
+
+          [Service]
+          ExecStart=/usr/bin/snapclient -c /etc/snapclient.conf --player pulse
+          Restart=always
+
+          [Install]
+          WantedBy=multi-user.target
+
+    - name: Enable and start Snapclient service
+      systemd:
+        name: snapclient
+        enabled: yes
+        state: started
+
+    - name: Start and enable Avahi daemon
+      systemd:
+        name: avahi-daemon
+        state: started
+        enabled: yes
+
+    - name: Configure Avahi
+      copy:
+        dest: /etc/avahi/avahi-daemon.conf
+        content: |
+          [server]
+          host-name={{ inventory_hostname }}
+          domain-name=local
+          use-ipv4=yes
+          use-ipv6=yes
+          allow-interfaces=enp1s0,mlan0
+    - name: Add root to pulse-access group
+      ansible.builtin.user:
+        name: root
+        comment: Root
+        group: pulse-access
+
+    - name: Reload Avahi daemon to apply changes
+      command: systemctl restart avahi-daemon
+
+    - name: Reboot the system
+      reboot:
